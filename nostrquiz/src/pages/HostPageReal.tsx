@@ -9,7 +9,7 @@ type GamePhase = 'setup' | 'lobby' | 'question' | 'results' | 'finished';
 
 export function HostPageReal() {
   const navigate = useNavigate();
-  const { nostr, gameSession, connect, disconnect, createGameSession, startGame, updateScores } = useNostrReal();
+  const { nostr, gameSession, connect, disconnect, createGameSession, startGame, processAnswersAndCalculateScores } = useNostrReal();
   
   const [phase, setPhase] = useState<GamePhase>('setup');
   const [availableQuizzes, setAvailableQuizzes] = useState<Quiz[]>([]);
@@ -17,6 +17,10 @@ export function HostPageReal() {
   const [gamePin, setGamePin] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [questionTimer, setQuestionTimer] = useState<number | null>(null);
+  const [timeRemaining, setTimeRemaining] = useState<number>(0);
+  const [currentScores, setCurrentScores] = useState<any[]>([]);
 
   // Load available quizzes
   useEffect(() => {
@@ -98,6 +102,8 @@ export function HostPageReal() {
       await startGame(selectedQuiz);
       console.log('🎮 HOST: startGame completed successfully');
       setPhase('question');
+      setCurrentQuestionIndex(0);
+      startQuestionTimer(0);
     } catch (error) {
       console.log('🎮 HOST: ❌ Error in startGame:', error);
       setError(error instanceof Error ? error.message : 'Failed to start quiz');
@@ -106,52 +112,74 @@ export function HostPageReal() {
     }
   };
 
-  // Move to next question or results
-  const handleNextQuestion = () => {
-    if (!selectedQuiz || !gameSession.sessionId) return;
-
-    const currentIndex = gameSession.currentQuestionIndex;
-    const isLastQuestion = currentIndex >= selectedQuiz.questions.length - 1;
-
-    if (isLastQuestion) {
-      setPhase('finished');
-    } else {
-      // Calculate scores for current question
-      const currentQuestion = selectedQuiz.questions[currentIndex];
-      const correctAnswerIndex = currentQuestion.correct_index;
-      
-      const updatedScores = gameSession.players.map(player => {
-        const playerAnswer = gameSession.answers.find(
-          a => a.pubkey === player.pubkey && a.questionIndex === currentIndex
-        );
-        
-        const isCorrect = playerAnswer?.answerIndex === correctAnswerIndex;
-        const currentScore = gameSession.scores.find(s => s.pubkey === player.pubkey)?.totalScore || 0;
-        const points = isCorrect ? currentQuestion.points : 0;
-        
-        return {
-          pubkey: player.pubkey,
-          nickname: player.nickname,
-          totalScore: currentScore + points,
-        };
+  // Start timer for current question
+  const startQuestionTimer = (questionIndex: number) => {
+    if (!selectedQuiz) return;
+    
+    const question = selectedQuiz.questions[questionIndex];
+    const timeLimit = question.time_limit_seconds || 20;
+    
+    setTimeRemaining(timeLimit);
+    
+    const timer = setInterval(() => {
+      setTimeRemaining(prev => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          handleQuestionTimeout(questionIndex);
+          return 0;
+        }
+        return prev - 1;
       });
+    }, 1000);
+    
+    setQuestionTimer(timer as any);
+  };
 
-      // Update scores via Nostr
-      updateScores(currentIndex, updatedScores);
-      
-      // Move to next question or results
-      if (currentIndex + 1 >= selectedQuiz.questions.length) {
-        setPhase('finished');
-      } else {
-        setPhase('question');
-      }
+  // Handle question timeout - process answers and show results
+  const handleQuestionTimeout = async (questionIndex: number) => {
+    console.log('⏰ HOST: Question timeout for question', questionIndex);
+    
+    try {
+      const scores = await processAnswersAndCalculateScores(questionIndex);
+      setCurrentScores(scores);
+      setPhase('results');
+    } catch (error) {
+      console.error('❌ Error processing answers:', error);
+      setError('Failed to process answers');
     }
   };
 
-  // Show results/leaderboard
-  const handleShowResults = () => {
-    setPhase('results');
+  // Move to next question or finish game
+  const handleNextQuestion = async () => {
+    if (!selectedQuiz) return;
+    
+    const nextIndex = currentQuestionIndex + 1;
+    
+    if (nextIndex >= selectedQuiz.questions.length) {
+      // Game finished
+      setPhase('finished');
+      return;
+    }
+    
+    // Move to next question
+    setCurrentQuestionIndex(nextIndex);
+    setPhase('question');
+    startQuestionTimer(nextIndex);
   };
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (questionTimer) {
+        clearInterval(questionTimer);
+      }
+    };
+  }, [questionTimer]);
+
+
+
+  // Show results/leaderboard
+
 
   // Reset game
   const handleResetGame = () => {
@@ -298,16 +326,19 @@ export function HostPageReal() {
   const renderQuestion = () => {
     if (!selectedQuiz) return null;
     
-    const currentQuestion = selectedQuiz.questions[gameSession.currentQuestionIndex];
+    const currentQuestion = selectedQuiz.questions[currentQuestionIndex];
     const answeredPlayers = gameSession.answers.filter(
-      a => a.questionIndex === gameSession.currentQuestionIndex
+      a => a.questionIndex === currentQuestionIndex
     ).length;
 
     return (
       <div className="host-container">
         <div className="question-section">
           <div className="question-header">
-            <h2>Question {gameSession.currentQuestionIndex + 1} of {selectedQuiz.questions.length}</h2>
+            <h2>Question {currentQuestionIndex + 1} of {selectedQuiz.questions.length}</h2>
+            <div className="question-timer">
+              ⏱️ {timeRemaining}s remaining
+            </div>
             <div className="question-stats">
               {answeredPlayers}/{gameSession.players.length} answered
             </div>
@@ -327,16 +358,10 @@ export function HostPageReal() {
 
           <div className="question-controls">
             <button 
-              className="next-button"
-              onClick={handleNextQuestion}
+              className="skip-button"
+              onClick={() => handleQuestionTimeout(currentQuestionIndex)}
             >
-              {gameSession.currentQuestionIndex + 1 >= selectedQuiz.questions.length 
-                ? 'Finish Quiz' 
-                : 'Next Question'
-              }
-            </button>
-            <button className="show-results-button" onClick={handleShowResults}>
-              Show Results
+              Skip to Results
             </button>
           </div>
         </div>
@@ -345,52 +370,72 @@ export function HostPageReal() {
   };
 
   // Render results phase
-  const renderResults = () => (
-    <div className="host-container">
-      <div className="results-section">
-        <h1>Leaderboard</h1>
-        
-        <div className="leaderboard">
-          {gameSession.scores
-            .sort((a, b) => b.totalScore - a.totalScore)
-            .map((score, index) => (
-              <div key={score.pubkey} className="leaderboard-row">
-                <span className="rank">#{index + 1}</span>
-                <span className="nickname">{score.nickname}</span>
-                <span className="score">{score.totalScore} pts</span>
-              </div>
-            ))}
-        </div>
+  const renderResults = () => {
+    if (!selectedQuiz) return null;
+    
+    const currentQuestion = selectedQuiz.questions[currentQuestionIndex];
+    const correctAnswerIndex = currentQuestion.correct_index;
+    const correctAnswer = currentQuestion.options[correctAnswerIndex];
+    
+    return (
+      <div className="host-container">
+        <div className="results-section">
+          <h1>Question {currentQuestionIndex + 1} Results</h1>
+          
+          <div className="correct-answer">
+            <h3>Correct Answer:</h3>
+            <div className="answer-reveal">
+              <span className="option-letter correct">{String.fromCharCode(65 + correctAnswerIndex)}</span>
+              <span className="option-text">{correctAnswer}</span>
+            </div>
+          </div>
+          
+          <div className="leaderboard">
+            <h3>Current Leaderboard</h3>
+            {currentScores
+              .sort((a, b) => b.totalScore - a.totalScore)
+              .map((score, index) => (
+                <div key={score.pubkey} className={`leaderboard-row ${score.isCorrect ? 'correct' : 'wrong'}`}>
+                  <span className="rank">#{index + 1}</span>
+                  <span className="nickname">{score.nickname}</span>
+                  <span className="question-score">
+                    {score.isCorrect ? '✅' : '❌'} +{score.questionScore}
+                  </span>
+                  <span className="total-score">{score.totalScore} pts</span>
+                </div>
+              ))}
+          </div>
 
-        <div className="results-controls">
-          <button className="continue-button" onClick={() => setPhase('question')}>
-            Continue Quiz
-          </button>
-          <button className="finish-button" onClick={() => setPhase('finished')}>
-            Finish Game
-          </button>
+          <div className="results-controls">
+            <button className="continue-button" onClick={handleNextQuestion}>
+              {currentQuestionIndex + 1 >= selectedQuiz.questions.length 
+                ? 'Show Final Results' 
+                : 'Next Question'
+              }
+            </button>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   // Render finished phase
   const renderFinished = () => (
     <div className="host-container">
       <div className="finished-section">
-        <h1>🏆 Quiz Complete!</h1>
+        <h1>🎉 Quiz Complete!</h1>
         
         <div className="final-leaderboard">
           <h2>Final Results</h2>
-          {gameSession.scores
+          {currentScores
             .sort((a, b) => b.totalScore - a.totalScore)
             .map((score, index) => (
-              <div key={score.pubkey} className={`leaderboard-row ${index < 3 ? 'podium' : ''}`}>
-                <span className="rank">
-                  {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
+              <div key={score.pubkey} className={`final-leaderboard-row ${index === 0 ? 'winner' : ''}`}>
+                <span className="final-rank">
+                  {index === 0 ? '🏆' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
                 </span>
-                <span className="nickname">{score.nickname}</span>
-                <span className="score">{score.totalScore} pts</span>
+                <span className="final-nickname">{score.nickname}</span>
+                <span className="final-score">{score.totalScore} pts</span>
               </div>
             ))}
         </div>

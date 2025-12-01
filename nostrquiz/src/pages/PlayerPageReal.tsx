@@ -22,6 +22,10 @@ export function PlayerPageReal() {
   const [hasAnswered, setHasAnswered] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [myScore, setMyScore] = useState(0);
+  const [myRank, setMyRank] = useState(0);
+  const [lastQuestionScore, setLastQuestionScore] = useState(0);
+  const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const hasAttemptedAutoJoinRef = useRef(false);
 
   // Auto-connect to Nostr when component mounts
@@ -119,9 +123,36 @@ export function PlayerPageReal() {
     if (gameSession.currentQuestionIndex > 0) {
       setSelectedAnswer(null);
       setHasAnswered(false);
+      setIsCorrect(null);
       setPhase('question');
     }
   }, [gameSession.currentQuestionIndex]);
+
+  // Track score updates
+  useEffect(() => {
+    if (gameSession.scores && gameSession.scores.length > 0 && nostr.userPubkey) {
+      const myScoreData = gameSession.scores.find(s => s.pubkey === nostr.userPubkey);
+      if (myScoreData) {
+        const previousScore = myScore;
+        setMyScore(myScoreData.totalScore);
+        setLastQuestionScore(myScoreData.totalScore - previousScore);
+        
+        // Calculate rank
+        const sortedScores = [...gameSession.scores].sort((a, b) => b.totalScore - a.totalScore);
+        const rank = sortedScores.findIndex(s => s.pubkey === nostr.userPubkey) + 1;
+        setMyRank(rank);
+        
+        // Check if last answer was correct
+        // Note: isCorrect is determined by comparing player's answer with correct answer
+        // This will be handled in the answer feedback logic
+        
+        // Show results when scores are updated
+        if (phase === 'waiting') {
+          setPhase('results');
+        }
+      }
+    }
+  }, [gameSession.scores, nostr.userPubkey, phase]);
 
   // Update phase based on game session state
   useEffect(() => {
@@ -331,39 +362,57 @@ export function PlayerPageReal() {
   );
 
   // Render results phase
-  const renderResults = () => (
-    <div className="player-container">
-      <div className="results-section">
-        <h1>Results</h1>
-        
-        <div className="leaderboard">
-          {gameSession.scores
-            .sort((a, b) => b.totalScore - a.totalScore)
-            .map((score, index) => (
-              <div 
-                key={score.pubkey} 
-                className={`leaderboard-row ${score.pubkey === nostr.userPubkey ? 'current-player' : ''}`}
-              >
-                <span className="rank">#{index + 1}</span>
-                <span className="nickname">{score.nickname}</span>
-                <span className="score">{score.totalScore} pts</span>
+  const renderResults = () => {
+    if (!gameSession.quiz) return null;
+    
+    const currentQuestion = gameSession.quiz.questions[gameSession.currentQuestionIndex];
+    const correctAnswerIndex = currentQuestion.correct_index;
+    const correctAnswer = currentQuestion.options[correctAnswerIndex];
+    
+    return (
+      <div className="player-container">
+        <div className="results-section">
+          <div className="answer-result">
+            <div className={`result-indicator ${isCorrect ? 'correct' : 'wrong'}`}>
+              {isCorrect ? '✅ Correct!' : '❌ Wrong'}
+            </div>
+            
+            <div className="correct-answer">
+              <h3>Correct Answer:</h3>
+              <div className="answer-reveal">
+                <span className="option-letter correct">{String.fromCharCode(65 + correctAnswerIndex)}</span>
+                <span className="option-text">{correctAnswer}</span>
               </div>
-            ))}
-        </div>
-
-        <div className="player-position">
-          {(() => {
-            const playerRank = gameSession.scores
-              .sort((a, b) => b.totalScore - a.totalScore)
-              .findIndex(s => s.pubkey === nostr.userPubkey) + 1;
-            return (
-              <p>You are in position <strong>#{playerRank}</strong></p>
-            );
-          })()}
+            </div>
+            
+            <div className="score-update">
+              <h3>Your Score</h3>
+              <div className="score-change">
+                {lastQuestionScore > 0 ? `+${lastQuestionScore}` : '+0'} points
+              </div>
+              <div className="total-score">
+                Total: {myScore} points
+              </div>
+            </div>
+          </div>
+          
+          <div className="current-ranking">
+            <h3>Current Ranking</h3>
+            <div className="rank-display">
+              #{myRank} of {gameSession.players.length}
+            </div>
+          </div>
+          
+          <div className="waiting-next">
+            <p>Waiting for next question...</p>
+            <div className="loading-dots">
+              <span>.</span><span>.</span><span>.</span>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   // Render finished phase
   const renderFinished = () => (

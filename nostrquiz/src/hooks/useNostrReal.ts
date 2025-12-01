@@ -275,6 +275,93 @@ export function useNostrReal() {
     }
   }, [gameSessionState.sessionId]);
 
+  // Process answers and calculate scores (host)
+  const processAnswersAndCalculateScores = useCallback(async (questionIndex: number) => {
+    if (!gameSessionState.sessionId || !gameSessionState.quiz) {
+      throw new Error('No active game session or quiz');
+    }
+
+    console.log('🧮 HOST: Processing answers for question', questionIndex);
+    console.log('🧮 HOST: Current answers:', gameSessionState.answers);
+    console.log('🧮 HOST: Current players:', gameSessionState.players);
+
+    const currentQuestion = gameSessionState.quiz.questions[questionIndex];
+    if (!currentQuestion) {
+      throw new Error('Question not found');
+    }
+
+    const correctAnswerIndex = currentQuestion.correct_index;
+    const basePoints = currentQuestion.points || 1000;
+    const timeLimit = currentQuestion.time_limit_seconds || 20;
+
+    console.log('🧮 HOST: Question details:', {
+      correctAnswerIndex,
+      basePoints,
+      timeLimit
+    });
+
+    // Get answers for this question
+    const questionAnswers = gameSessionState.answers.filter(
+      answer => answer.questionIndex === questionIndex
+    );
+
+    console.log('🧮 HOST: Answers for this question:', questionAnswers);
+
+    // Calculate scores for each player
+    const newScores = gameSessionState.players.map(player => {
+      const playerAnswer = questionAnswers.find(answer => answer.pubkey === player.pubkey);
+      
+      if (!playerAnswer) {
+        // Player didn't answer
+        console.log('🧮 HOST: Player', player.nickname, 'did not answer');
+        return {
+          pubkey: player.pubkey,
+          nickname: player.nickname,
+          totalScore: gameSessionState.scores.find(s => s.pubkey === player.pubkey)?.totalScore || 0,
+          questionScore: 0,
+          isCorrect: false,
+        };
+      }
+
+      const isCorrect = playerAnswer.answerIndex === correctAnswerIndex;
+      let questionScore = 0;
+
+      if (isCorrect) {
+        // Calculate time-based score
+        const responseTime = (playerAnswer.timeMs - gameSessionState.startTime) / 1000; // seconds
+        const timeRemaining = Math.max(0, timeLimit - responseTime);
+        const timeBonus = timeRemaining / timeLimit; // 0 to 1
+        questionScore = Math.round(basePoints * timeBonus);
+        
+        console.log('🧮 HOST: Player', player.nickname, 'correct answer!', {
+          responseTime,
+          timeRemaining,
+          timeBonus,
+          questionScore
+        });
+      } else {
+        console.log('🧮 HOST: Player', player.nickname, 'incorrect answer');
+      }
+
+      const previousScore = gameSessionState.scores.find(s => s.pubkey === player.pubkey)?.totalScore || 0;
+      
+      return {
+        pubkey: player.pubkey,
+        nickname: player.nickname,
+        totalScore: previousScore + questionScore,
+        questionScore,
+        isCorrect,
+      };
+    });
+
+    console.log('🧮 HOST: Calculated scores:', newScores);
+
+    // Update scores via Nostr
+    await updateScores(questionIndex, newScores);
+
+    return newScores;
+  }, [gameSessionState.sessionId, gameSessionState.quiz, gameSessionState.answers, gameSessionState.players, gameSessionState.scores, gameSessionState.startTime, updateScores]);
+
   // Start the game (host)
   const startGame = useCallback(async (quiz: any) => {
     if (!gameSessionState.sessionId) {
@@ -345,6 +432,8 @@ export function useNostrReal() {
     const handleAnswer = (event: Event) => {
       try {
         const answerData = JSON.parse(event.content);
+        console.log('📝 HOST: Received answer from player:', event.pubkey, 'Answer:', answerData);
+        
         const newAnswer = {
           pubkey: event.pubkey,
           questionIndex: answerData.question_index,
@@ -463,6 +552,7 @@ export function useNostrReal() {
     startGame,
     submitAnswer,
     updateScores,
+    processAnswersAndCalculateScores,
     
     // Utilities
     isHost: gameSessionState.sessionId !== null && nostrState.userPubkey !== null,
