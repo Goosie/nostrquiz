@@ -9,7 +9,7 @@ type GamePhase = 'setup' | 'lobby' | 'question' | 'results' | 'finished';
 
 export function HostPageReal() {
   const navigate = useNavigate();
-  const { nostr, gameSession, connect, disconnect, createGameSession, updateScores } = useNostrReal();
+  const { nostr, gameSession, connect, disconnect, createGameSession, startGame, updateScores } = useNostrReal();
   
   const [phase, setPhase] = useState<GamePhase>('setup');
   const [availableQuizzes, setAvailableQuizzes] = useState<Quiz[]>([]);
@@ -79,8 +79,23 @@ export function HostPageReal() {
   };
 
   // Start the quiz (move to first question)
-  const handleStartQuiz = () => {
-    setPhase('question');
+  const handleStartQuiz = async () => {
+    if (!selectedQuiz) {
+      setError('No quiz selected');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+
+    try {
+      await startGame(selectedQuiz);
+      setPhase('question');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to start quiz');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Move to next question or results

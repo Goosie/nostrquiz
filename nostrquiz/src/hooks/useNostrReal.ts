@@ -130,6 +130,8 @@ export function useNostrReal() {
     try {
       const sessionId = await nostrService.current.createGameSession(quiz, pin);
       
+      console.log(`🎮 Game session created with ID: ${sessionId}`);
+      
       setGameSessionState(prev => ({
         ...prev,
         sessionId,
@@ -143,6 +145,7 @@ export function useNostrReal() {
       }));
 
       // Subscribe to session events
+      console.log(`🔔 Setting up subscription for session: ${sessionId}`);
       nostrService.current.subscribeToGameSession(sessionId);
 
       return sessionId;
@@ -152,6 +155,42 @@ export function useNostrReal() {
     }
   }, [nostrState.isConnected]);
 
+  // Find session by PIN (helper function)
+  const findSessionByPin = useCallback(async (pin: string): Promise<string | null> => {
+    return new Promise((resolve) => {
+      let timeoutId: NodeJS.Timeout;
+      
+      // Set up temporary handler for game session events
+      const handleGameSession = (event: Event) => {
+        try {
+          // Parse content to validate it's a proper session event
+          JSON.parse(event.content);
+          const eventPin = event.tags.find(tag => tag[0] === 'd')?.[1];
+          
+          if (eventPin === pin) {
+            clearTimeout(timeoutId);
+            nostrService.current.removeEventListener(NOSTR_KINDS.GAME_SESSION, handleGameSession);
+            resolve(event.id);
+          }
+        } catch (error) {
+          console.error('❌ Error parsing game session event:', error);
+        }
+      };
+      
+      // Add temporary event handler
+      nostrService.current.addEventListener(NOSTR_KINDS.GAME_SESSION, handleGameSession);
+      
+      // Start searching for the session
+      nostrService.current.findGameSessionByPin(pin);
+      
+      // Set timeout to avoid waiting forever
+      timeoutId = setTimeout(() => {
+        nostrService.current.removeEventListener(NOSTR_KINDS.GAME_SESSION, handleGameSession);
+        resolve(null);
+      }, 5000); // 5 second timeout
+    });
+  }, []);
+
   // Join a game session (player)
   const joinGameSession = useCallback(async (pin: string, nickname: string) => {
     if (!nostrState.isConnected) {
@@ -159,30 +198,26 @@ export function useNostrReal() {
     }
 
     try {
-      // Find session by PIN
-      nostrService.current.findGameSessionByPin(pin);
+      // Find session by PIN and wait for result
+      const sessionId = await findSessionByPin(pin);
       
-      // Wait for session to be found (this is a simplified approach)
-      // In a real implementation, you'd want to handle this more robustly
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      if (!sessionId) {
+        throw new Error('Game session not found');
+      }
       
-      // For now, we'll simulate finding a session
-      // In the real implementation, this would be handled by event listeners
-      const mockSessionId = `session_${pin}_${Date.now()}`;
-      
-      await nostrService.current.joinGameSession(mockSessionId, nickname);
+      await nostrService.current.joinGameSession(sessionId, nickname);
       
       setGameSessionState(prev => ({
         ...prev,
-        sessionId: mockSessionId,
+        sessionId,
         pin,
         gamePhase: 'lobby',
       }));
 
       // Subscribe to session events
-      nostrService.current.subscribeToGameSession(mockSessionId);
+      nostrService.current.subscribeToGameSession(sessionId);
 
-      return mockSessionId;
+      return sessionId;
     } catch (error) {
       console.error('❌ Failed to join game session:', error);
       throw error;
@@ -231,6 +266,42 @@ export function useNostrReal() {
     }
   }, [gameSessionState.sessionId]);
 
+  // Start the game (host)
+  const startGame = useCallback(async (quiz: any) => {
+    if (!gameSessionState.sessionId) {
+      throw new Error('No active game session');
+    }
+
+    try {
+      console.log('🚀 Starting game with quiz:', quiz);
+      
+      // Update local state first
+      setGameSessionState(prev => ({
+        ...prev,
+        gamePhase: 'playing',
+        currentQuestionIndex: 0,
+        currentQuestion: quiz.questions[0],
+        quiz,
+        timeLimit: quiz.questions[0]?.time_limit_seconds || 20,
+        startTime: Date.now(),
+      }));
+
+      // Publish game state to all players
+      await nostrService.current.publishGameState(gameSessionState.sessionId, {
+        phase: 'playing',
+        currentQuestionIndex: 0,
+        currentQuestion: quiz.questions[0],
+        timeLimit: quiz.questions[0]?.time_limit_seconds || 20,
+        startTime: Date.now(),
+      });
+
+      console.log('✅ Game started successfully');
+    } catch (error) {
+      console.error('❌ Failed to start game:', error);
+      throw error;
+    }
+  }, [gameSessionState.sessionId]);
+
   // Set up event handlers
   useEffect(() => {
     const service = nostrService.current;
@@ -238,6 +309,7 @@ export function useNostrReal() {
     // Handler for player joins
     const handlePlayerJoin = (event: Event) => {
       try {
+        console.log('🎮 Player join event received:', event);
         const joinData = JSON.parse(event.content);
         const newPlayer = {
           pubkey: event.pubkey,
@@ -245,10 +317,15 @@ export function useNostrReal() {
           joinedAt: joinData.joined_at,
         };
 
-        setGameSessionState(prev => ({
-          ...prev,
-          players: [...prev.players.filter(p => p.pubkey !== event.pubkey), newPlayer],
-        }));
+        console.log('👤 Adding new player:', newPlayer);
+        setGameSessionState(prev => {
+          const updatedState = {
+            ...prev,
+            players: [...prev.players.filter(p => p.pubkey !== event.pubkey), newPlayer],
+          };
+          console.log('📊 Updated game state:', updatedState);
+          return updatedState;
+        });
       } catch (error) {
         console.error('❌ Error handling player join:', error);
       }
@@ -288,6 +365,25 @@ export function useNostrReal() {
       }
     };
 
+    // Handler for game state updates (phase changes, current question)
+    const handleGameState = (event: Event) => {
+      try {
+        const gameStateData = JSON.parse(event.content);
+        console.log('🎮 Game state update received:', gameStateData);
+        
+        setGameSessionState(prev => ({
+          ...prev,
+          gamePhase: gameStateData.phase,
+          currentQuestionIndex: gameStateData.currentQuestionIndex || prev.currentQuestionIndex,
+          currentQuestion: gameStateData.currentQuestion || prev.currentQuestion,
+          timeLimit: gameStateData.timeLimit || prev.timeLimit,
+          startTime: gameStateData.startTime || prev.startTime,
+        }));
+      } catch (error) {
+        console.error('❌ Error handling game state:', error);
+      }
+    };
+
     // Handler for game sessions (when searching by PIN)
     const handleGameSession = (event: Event) => {
       try {
@@ -305,12 +401,14 @@ export function useNostrReal() {
     service.addEventListener(NOSTR_KINDS.PLAYER_JOIN, handlePlayerJoin);
     service.addEventListener(NOSTR_KINDS.ANSWER, handleAnswer);
     service.addEventListener(NOSTR_KINDS.SCORE_UPDATE, handleScoreUpdate);
+    service.addEventListener(NOSTR_KINDS.GAME_STATE, handleGameState);
     service.addEventListener(NOSTR_KINDS.GAME_SESSION, handleGameSession);
 
     // Store handlers for cleanup
     eventHandlersRef.current.set(NOSTR_KINDS.PLAYER_JOIN, handlePlayerJoin);
     eventHandlersRef.current.set(NOSTR_KINDS.ANSWER, handleAnswer);
     eventHandlersRef.current.set(NOSTR_KINDS.SCORE_UPDATE, handleScoreUpdate);
+    eventHandlersRef.current.set(NOSTR_KINDS.GAME_STATE, handleGameState);
     eventHandlersRef.current.set(NOSTR_KINDS.GAME_SESSION, handleGameSession);
 
     // Cleanup function
@@ -351,6 +449,7 @@ export function useNostrReal() {
     disconnect,
     createGameSession,
     joinGameSession,
+    startGame,
     submitAnswer,
     updateScores,
     

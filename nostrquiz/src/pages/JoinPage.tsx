@@ -41,7 +41,9 @@ const JoinPage: React.FC = () => {
       localStorage.setItem('nostrquiz_player', JSON.stringify(playerData));
       
       // Navigate to player page with PIN and nickname as URL params
-      navigate(`/player/game?pin=${pin}&nickname=${encodeURIComponent(nickname)}`);
+      const playerUrl = `/player/game?pin=${pin}&nickname=${encodeURIComponent(nickname)}`;
+      console.log('🔄 Navigating to:', playerUrl);
+      navigate(playerUrl);
       
     } catch (error) {
       console.error('Failed to join game:', error);

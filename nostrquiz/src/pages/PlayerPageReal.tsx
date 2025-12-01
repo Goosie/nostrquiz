@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useNostrReal } from '../hooks/useNostrReal';
 import { ROUTES } from '../utils/constants';
@@ -6,8 +6,13 @@ import { ROUTES } from '../utils/constants';
 type PlayerPhase = 'joining' | 'lobby' | 'question' | 'waiting' | 'results' | 'finished';
 
 export function PlayerPageReal() {
+  console.log('🎮 PlayerPageReal component starting to render...');
+  
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  
+  console.log('🔍 Search params:', searchParams.toString());
+  
   const { nostr, gameSession, connect, joinGameSession, submitAnswer } = useNostrReal();
   
   const [phase, setPhase] = useState<PlayerPhase>('joining');
@@ -17,10 +22,14 @@ export function PlayerPageReal() {
   const [hasAnswered, setHasAnswered] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const hasAttemptedAutoJoinRef = useRef(false);
 
   // Auto-connect to Nostr when component mounts
   useEffect(() => {
+    console.log('🎮 PlayerPageReal mounted with PIN:', pin, 'nickname:', nickname);
+    
     if (!nostr.isConnected && !nostr.isConnecting) {
+      console.log('🔌 Auto-connecting to Nostr...');
       connect().catch(error => {
         setError('Failed to connect to Nostr');
         console.error('Auto-connect failed:', error);
@@ -28,27 +37,53 @@ export function PlayerPageReal() {
     }
   }, [nostr.isConnected, nostr.isConnecting, connect]);
 
+  // Auto-join if PIN and nickname are provided via URL params
+  useEffect(() => {
+    console.log('🔍 Auto-join check:', {
+      pin: !!pin,
+      nickname: !!nickname,
+      isConnected: nostr.isConnected,
+      phase,
+      connectedRelays: nostr.connectedRelays || 0,
+      hasAttempted: hasAttemptedAutoJoinRef.current
+    });
+    
+    if (pin && nickname && nostr.isConnected && !hasAttemptedAutoJoinRef.current) {
+      console.log('🚀 Auto-joining game with PIN:', pin, 'nickname:', nickname);
+      hasAttemptedAutoJoinRef.current = true;
+      handleJoinGame(new Event('submit') as any);
+    }
+  }, [pin, nickname, nostr.isConnected, phase]);
+
   // Handle joining a game
   const handleJoinGame = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    console.log('🎯 handleJoinGame called with PIN:', pin, 'nickname:', nickname);
+    
     if (!pin.trim() || !nickname.trim()) {
+      console.log('❌ Missing PIN or nickname');
       setError('Please enter both PIN and nickname');
       return;
     }
 
     if (!nostr.isConnected) {
+      console.log('❌ Not connected to Nostr');
       setError('Not connected to Nostr. Please wait...');
       return;
     }
 
+    console.log('🚀 Starting join process...');
     setIsLoading(true);
     setError('');
 
     try {
+      console.log('📞 Calling joinGameSession...');
       await joinGameSession(pin.trim(), nickname.trim());
+      console.log('✅ Join successful, setting phase to lobby');
       setPhase('lobby');
     } catch (error) {
+      console.error('❌ Join failed:', error);
       setError(error instanceof Error ? error.message : 'Failed to join game');
     } finally {
       setIsLoading(false);
@@ -90,9 +125,11 @@ export function PlayerPageReal() {
 
   // Update phase based on game session state
   useEffect(() => {
+    console.log('🎮 Game phase update:', gameSession.gamePhase, 'current phase:', phase);
+    
     if (gameSession.gamePhase === 'lobby' && phase !== 'lobby') {
       setPhase('lobby');
-    } else if (gameSession.gamePhase === 'question' && !hasAnswered) {
+    } else if ((gameSession.gamePhase === 'playing' || gameSession.gamePhase === 'question') && !hasAnswered) {
       setPhase('question');
     } else if (gameSession.gamePhase === 'results') {
       setPhase('results');
@@ -103,6 +140,12 @@ export function PlayerPageReal() {
 
   // Get current question
   const getCurrentQuestion = () => {
+    // First try to get the current question from game state (real-time)
+    if (gameSession.currentQuestion) {
+      return gameSession.currentQuestion;
+    }
+    
+    // Fallback to quiz data if available
     if (!gameSession.quiz || gameSession.currentQuestionIndex >= gameSession.quiz.questions.length) {
       return null;
     }

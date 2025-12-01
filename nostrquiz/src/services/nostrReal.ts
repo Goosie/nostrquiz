@@ -166,13 +166,17 @@ export class NostrRealService {
   // Handle incoming events
   private handleEvent(event: Event): void {
     console.log(`📨 Received event kind ${event.kind}:`, event);
+    console.log(`🏷️ Event tags:`, event.tags);
     
     const handlers = this.state.eventHandlers.get(event.kind) || [];
-    handlers.forEach(handler => {
+    console.log(`🔔 Found ${handlers.length} handlers for kind ${event.kind}`);
+    
+    handlers.forEach((handler, index) => {
       try {
+        console.log(`🎯 Calling handler ${index} for kind ${event.kind}`);
         handler(event);
       } catch (error) {
-        console.error(`❌ Error in event handler for kind ${event.kind}:`, error);
+        console.error(`❌ Error in event handler ${index} for kind ${event.kind}:`, error);
       }
     });
   }
@@ -348,7 +352,7 @@ export class NostrRealService {
       content: JSON.stringify(sessionData),
       tags: [
         ['h', this.state.userPubkey!], // host pubkey
-        ['pin', pin],
+        ['d', pin], // Use 'd' tag for PIN (commonly indexed)
         ['quiz', quiz.id],
       ],
     });
@@ -359,6 +363,8 @@ export class NostrRealService {
 
   // Join a game session
   async joinGameSession(sessionId: string, nickname: string): Promise<void> {
+    console.log(`🎮 Joining game session ${sessionId} as ${nickname}`);
+    
     const joinData = {
       session_id: sessionId,
       nickname,
@@ -374,7 +380,9 @@ export class NostrRealService {
       ],
     });
 
+    console.log(`👤 Publishing player join event:`, event);
     await this.publishEvent(event);
+    console.log(`✅ Player join event published successfully`);
   }
 
   // Submit an answer
@@ -423,20 +431,49 @@ export class NostrRealService {
     this.subscribe('game-session-search', [
       {
         kinds: [NOSTR_KINDS.GAME_SESSION],
-        '#pin': [pin],
-        limit: 1,
+        '#d': [pin],
+        limit: 10,
       }
     ]);
   }
 
   // Subscribe to game session events
   subscribeToGameSession(sessionId: string): void {
+    console.log(`🔔 Subscribing to game session events for session: ${sessionId}`);
     this.subscribe('game-session', [
       {
         kinds: [NOSTR_KINDS.PLAYER_JOIN, NOSTR_KINDS.ANSWER, NOSTR_KINDS.SCORE_UPDATE, NOSTR_KINDS.GAME_STATE],
         '#e': [sessionId],
       }
     ]);
+    console.log(`✅ Subscription set up for session: ${sessionId}`);
+  }
+
+  // Publish game state update (current question, phase, etc.)
+  async publishGameState(sessionId: string, gameState: {
+    phase: 'lobby' | 'playing' | 'finished';
+    currentQuestionIndex?: number;
+    currentQuestion?: any;
+    timeLimit?: number;
+    startTime?: number;
+  }): Promise<string> {
+    console.log(`📢 Publishing game state for session ${sessionId}:`, gameState);
+    
+    const event = await this.signEvent({
+      kind: NOSTR_KINDS.GAME_STATE,
+      content: JSON.stringify({
+        session_id: sessionId,
+        ...gameState,
+        timestamp: Date.now(),
+      }),
+      tags: [
+        ['e', sessionId], // Reference to game session
+      ],
+    });
+
+    await this.publishEvent(event);
+    console.log(`✅ Game state published: ${event.id}`);
+    return event.id;
   }
 
   // Get connection status

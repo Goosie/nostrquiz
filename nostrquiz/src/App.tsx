@@ -8,6 +8,8 @@ import PlayerPageReal from './pages/PlayerPageReal'
 
 function App() {
   console.log('App component rendering...');
+  console.log('Current pathname:', window.location.pathname);
+  console.log('Current search:', window.location.search);
   
   return (
     <div style={{ 
@@ -25,7 +27,13 @@ function App() {
         <Route path={ROUTES.HOME} element={<HomePage />} />
         <Route path={ROUTES.HOST} element={<HostPageReal />} />
         <Route path={ROUTES.JOIN} element={<JoinPage />} />
-        <Route path={ROUTES.PLAYER_GAME} element={<PlayerPageReal />} />
+        <Route path={ROUTES.PLAYER_GAME} element={
+          <div>
+            <h2>🎮 Player Game Route Reached!</h2>
+            <p>URL: {window.location.href}</p>
+            <PlayerPageReal />
+          </div>
+        } />
       </Routes>
     </div>
   )
