@@ -8,7 +8,7 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 12000,
     cors: true,
-    allowedHosts: ['work-1-vmjheokffesqyjko.prod-runtime.all-hands.dev'],
+    allowedHosts: 'all',
     headers: {
       'X-Frame-Options': 'ALLOWALL',
       'Access-Control-Allow-Origin': '*',
@@ -18,7 +18,7 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 12000,
     cors: true,
-    allowedHosts: ['work-1-vmjheokffesqyjko.prod-runtime.all-hands.dev'],
+    allowedHosts: 'all',
     headers: {
       'X-Frame-Options': 'ALLOWALL',
       'Access-Control-Allow-Origin': '*',
