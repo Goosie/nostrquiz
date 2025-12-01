@@ -457,7 +457,8 @@ export class NostrRealService {
     timeLimit?: number;
     startTime?: number;
   }): Promise<string> {
-    console.log(`📢 Publishing game state for session ${sessionId}:`, gameState);
+    console.log(`🎮 HOST: Publishing game state for session ${sessionId}:`, gameState);
+    console.log(`🎮 HOST: Using event kind ${NOSTR_KINDS.GAME_STATE} (35005)`);
     
     const event = await this.signEvent({
       kind: NOSTR_KINDS.GAME_STATE,
@@ -472,7 +473,7 @@ export class NostrRealService {
     });
 
     await this.publishEvent(event);
-    console.log(`✅ Game state published: ${event.id}`);
+    console.log(`🎮 HOST: ✅ Game state published successfully: ${event.id}`);
     return event.id;
   }
 

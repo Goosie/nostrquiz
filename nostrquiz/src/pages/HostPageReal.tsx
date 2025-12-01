@@ -80,7 +80,12 @@ export function HostPageReal() {
 
   // Start the quiz (move to first question)
   const handleStartQuiz = async () => {
+    console.log('🎮 HOST: handleStartQuiz called');
+    console.log('🎮 HOST: selectedQuiz:', selectedQuiz);
+    console.log('🎮 HOST: gameSession:', gameSession);
+    
     if (!selectedQuiz) {
+      console.log('🎮 HOST: ❌ No quiz selected');
       setError('No quiz selected');
       return;
     }
@@ -89,9 +94,12 @@ export function HostPageReal() {
     setError('');
 
     try {
+      console.log('🎮 HOST: About to call startGame...');
       await startGame(selectedQuiz);
+      console.log('🎮 HOST: startGame completed successfully');
       setPhase('question');
     } catch (error) {
+      console.log('🎮 HOST: ❌ Error in startGame:', error);
       setError(error instanceof Error ? error.message : 'Failed to start quiz');
     } finally {
       setIsLoading(false);

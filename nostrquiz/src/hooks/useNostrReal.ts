@@ -22,7 +22,10 @@ export interface GameSessionState {
     joinedAt: number;
   }>;
   currentQuestionIndex: number;
-  gamePhase: 'lobby' | 'question' | 'results' | 'finished';
+  currentQuestion: any;
+  gamePhase: 'lobby' | 'playing' | 'question' | 'results' | 'finished';
+  timeLimit: number;
+  startTime: number;
   scores: Array<{
     pubkey: string;
     nickname: string;
@@ -52,7 +55,10 @@ export function useNostrReal() {
     quiz: null,
     players: [],
     currentQuestionIndex: 0,
+    currentQuestion: null,
     gamePhase: 'lobby',
+    timeLimit: 20,
+    startTime: 0,
     scores: [],
     answers: [],
   });
@@ -115,7 +121,10 @@ export function useNostrReal() {
       quiz: null,
       players: [],
       currentQuestionIndex: 0,
+      currentQuestion: null,
       gamePhase: 'lobby',
+      timeLimit: 20,
+      startTime: 0,
       scores: [],
       answers: [],
     });
@@ -273,7 +282,8 @@ export function useNostrReal() {
     }
 
     try {
-      console.log('🚀 Starting game with quiz:', quiz);
+      console.log('🎮 HOST: 🚀 Starting game with quiz:', quiz);
+      console.log('🎮 HOST: Session ID:', gameSessionState.sessionId);
       
       // Update local state first
       setGameSessionState(prev => ({
@@ -295,7 +305,7 @@ export function useNostrReal() {
         startTime: Date.now(),
       });
 
-      console.log('✅ Game started successfully');
+      console.log('🎮 HOST: ✅ Game started successfully');
     } catch (error) {
       console.error('❌ Failed to start game:', error);
       throw error;
@@ -369,7 +379,8 @@ export function useNostrReal() {
     const handleGameState = (event: Event) => {
       try {
         const gameStateData = JSON.parse(event.content);
-        console.log('🎮 Game state update received:', gameStateData);
+        console.log('🎮 PLAYER: Game state update received:', gameStateData);
+        console.log('🎮 PLAYER: Event kind:', event.kind, 'Expected:', NOSTR_KINDS.GAME_STATE);
         
         setGameSessionState(prev => ({
           ...prev,

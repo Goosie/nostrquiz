@@ -283,7 +283,7 @@ export function PlayerPageReal() {
           </div>
 
           <div className="answer-options">
-            {currentQuestion.options.map((option, index) => (
+            {currentQuestion.options.map((option: string, index: number) => (
               <button
                 key={index}
                 className={`answer-button ${selectedAnswer === index ? 'selected' : ''}`}
