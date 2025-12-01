@@ -1,0 +1,44 @@
+import { useState, useCallback } from 'react';
+// Import the minimal service to test
+import { nostrServiceMinimal } from '../services/nostrMinimal';
+
+export interface NostrState {
+  connected: boolean;
+  publicKey: string | null;
+  connecting: boolean;
+  error: string | null;
+}
+
+export function useNostrTest() {
+  const [state, setState] = useState<NostrState>({
+    connected: false,
+    publicKey: null,
+    connecting: false,
+    error: null
+  });
+
+  const connect = useCallback(async () => {
+    console.log('Connect called - nostrServiceMinimal available:', !!nostrServiceMinimal);
+    setState(prev => ({ ...prev, connecting: true, error: null }));
+    
+    // Don't actually call the service yet, just test the import
+    setTimeout(() => {
+      setState({
+        connected: true,
+        publicKey: 'test-key',
+        connecting: false,
+        error: null
+      });
+    }, 1000);
+  }, []);
+
+  const checkExtension = useCallback(() => {
+    return typeof window !== 'undefined' && !!(window as any).nostr;
+  }, []);
+
+  return {
+    ...state,
+    connect,
+    hasExtension: checkExtension()
+  };
+}
