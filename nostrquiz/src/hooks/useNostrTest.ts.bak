@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 // Import the minimal service to test
-import { nostrServiceMinimal } from '../services/nostrMinimal';
+import { nostrServiceMinimal } from '../services/unused/nostrMinimal';
 
 export interface NostrState {
   connected: boolean;

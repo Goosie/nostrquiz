@@ -52,7 +52,7 @@ export class FormstrService {
 
       const subId = this.pool.subscribeMany(
         this.relays,
-        filters,
+        filters[0],
         {
           onevent: (event) => {
             forms.push(event);
@@ -131,6 +131,7 @@ export class FormstrService {
           const points = field.settings?.points || 1000;
 
           const question: Question = {
+            id: `q_${questionIndex}`,
             text: field.label,
             type: questionType,
             options: options,

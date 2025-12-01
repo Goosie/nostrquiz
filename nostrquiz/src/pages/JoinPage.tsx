@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { useGameSession } from '../hooks/useGameSession';
+// import { useGameSession } from '../hooks/useGameSession';
 import { isValidPin, isValidNickname } from '../utils/helpers';
 
 const JoinPage: React.FC = () => {
@@ -10,7 +10,7 @@ const JoinPage: React.FC = () => {
   const [nickname, setNickname] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const { joinSession } = useGameSession();
+  // const { joinSession } = useGameSession();
 
   const handleJoinGame = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,9 +30,8 @@ const JoinPage: React.FC = () => {
     setIsLoading(true);
     
     try {
-      await joinSession(pin, nickname);
-      
-      // Store player data and navigate to game
+      // For Release 2, we'll navigate directly to the player page with parameters
+      // The real joining logic will happen in PlayerPageReal
       const playerData = {
         pin,
         nickname,
@@ -40,7 +39,9 @@ const JoinPage: React.FC = () => {
       };
       
       localStorage.setItem('nostrquiz_player', JSON.stringify(playerData));
-      navigate('/player/game');
+      
+      // Navigate to player page with PIN and nickname as URL params
+      navigate(`/player/game?pin=${pin}&nickname=${encodeURIComponent(nickname)}`);
       
     } catch (error) {
       console.error('Failed to join game:', error);

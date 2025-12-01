@@ -26,7 +26,7 @@ export function HostPageFull() {
     setLoadingQuizzes(true);
     try {
       const formstrService = new FormstrService();
-      const fetchedQuizzes = await formstrService.getQuizzesForPubkey(nostr.publicKey);
+      const fetchedQuizzes = await formstrService.fetchQuizzesForPubkey(nostr.publicKey);
       setQuizzes(fetchedQuizzes);
     } catch (error) {
       console.error('Error loading quizzes:', error);

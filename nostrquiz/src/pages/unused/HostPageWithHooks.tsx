@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
 import { useNostr } from '../hooks/useNostr';
 // import { useGameSessionSimple } from '../hooks/useGameSessionSimple';
@@ -6,7 +6,7 @@ import { useNostr } from '../hooks/useNostr';
 const HostPageWithHooks: React.FC = () => {
   const { connected, publicKey, connecting, error, connect, hasExtension } = useNostr();
   // const { session, players, gameState, createSession, startGame } = useGameSessionSimple();
-  const [selectedQuiz, setSelectedQuiz] = useState(null);
+  // const [selectedQuiz, setSelectedQuiz] = useState(null);
 
   return (
     <div style={{ 

@@ -9,8 +9,8 @@ const mockQuestion: QuizQuestion = {
   text: 'What is the capital of France?',
   type: 'multiple_choice',
   options: ['London', 'Berlin', 'Paris', 'Madrid'],
-  correctIndex: 2,
-  timeLimitSeconds: 20,
+  correct_index: 2,
+  time_limit_seconds: 20,
   points: 1000
 }
 
@@ -76,7 +76,7 @@ const PlayerGamePage: React.FC = () => {
     
     // Show results after a short delay
     setTimeout(() => {
-      const isCorrect = answerIndex === mockQuestion.correctIndex
+      const isCorrect = answerIndex === mockQuestion.correct_index
       const points = isCorrect ? mockQuestion.points : 0
       
       setGameState(prev => ({
@@ -105,9 +105,9 @@ const PlayerGamePage: React.FC = () => {
     }
     
     if (showResults) {
-      if (index === mockQuestion.correctIndex) {
+      if (index === mockQuestion.correct_index) {
         className += ' correct'
-      } else if (selectedAnswer === index && index !== mockQuestion.correctIndex) {
+      } else if (selectedAnswer === index && index !== mockQuestion.correct_index) {
         className += ' wrong'
       }
     }
@@ -183,7 +183,7 @@ const PlayerGamePage: React.FC = () => {
             <div 
               className="bg-blue-500 h-2 rounded-full transition-all duration-1000"
               style={{ 
-                width: `${(gameState.timeRemaining / mockQuestion.timeLimitSeconds) * 100}%` 
+                width: `${(gameState.timeRemaining / mockQuestion.time_limit_seconds) * 100}%` 
               }}
             ></div>
           </div>
@@ -215,7 +215,7 @@ const PlayerGamePage: React.FC = () => {
         {/* Results */}
         {showResults && (
           <div className="card text-center">
-            {selectedAnswer === mockQuestion.correctIndex ? (
+            {selectedAnswer === mockQuestion.correct_index ? (
               <>
                 <div className="text-6xl mb-4">✅</div>
                 <h3 className="text-2xl font-bold mb-2" style={{ color: 'var(--color-correct)' }}>
@@ -230,7 +230,7 @@ const PlayerGamePage: React.FC = () => {
                   Incorrect
                 </h3>
                 <p className="mb-4">
-                  The correct answer was: <strong>{mockQuestion.options[mockQuestion.correctIndex]}</strong>
+                  The correct answer was: <strong>{mockQuestion.options[mockQuestion.correct_index]}</strong>
                 </p>
               </>
             ) : (
@@ -240,7 +240,7 @@ const PlayerGamePage: React.FC = () => {
                   Time's Up!
                 </h3>
                 <p className="mb-4">
-                  The correct answer was: <strong>{mockQuestion.options[mockQuestion.correctIndex]}</strong>
+                  The correct answer was: <strong>{mockQuestion.options[mockQuestion.correct_index]}</strong>
                 </p>
               </>
             )}

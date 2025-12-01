@@ -1,0 +1,399 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNostrReal } from '../hooks/useNostrReal';
+import { ROUTES } from '../utils/constants';
+
+type PlayerPhase = 'joining' | 'lobby' | 'question' | 'waiting' | 'results' | 'finished';
+
+export function PlayerPageReal() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { nostr, gameSession, connect, joinGameSession, submitAnswer } = useNostrReal();
+  
+  const [phase, setPhase] = useState<PlayerPhase>('joining');
+  const [pin, setPin] = useState(searchParams.get('pin') || '');
+  const [nickname, setNickname] = useState(searchParams.get('nickname') || '');
+  const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
+  const [hasAnswered, setHasAnswered] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  // Auto-connect to Nostr when component mounts
+  useEffect(() => {
+    if (!nostr.isConnected && !nostr.isConnecting) {
+      connect().catch(error => {
+        setError('Failed to connect to Nostr');
+        console.error('Auto-connect failed:', error);
+      });
+    }
+  }, [nostr.isConnected, nostr.isConnecting, connect]);
+
+  // Handle joining a game
+  const handleJoinGame = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!pin.trim() || !nickname.trim()) {
+      setError('Please enter both PIN and nickname');
+      return;
+    }
+
+    if (!nostr.isConnected) {
+      setError('Not connected to Nostr. Please wait...');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+
+    try {
+      await joinGameSession(pin.trim(), nickname.trim());
+      setPhase('lobby');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to join game');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle answer selection
+  const handleAnswerSelect = (answerIndex: number) => {
+    if (hasAnswered) return;
+    setSelectedAnswer(answerIndex);
+  };
+
+  // Handle answer submission
+  const handleSubmitAnswer = async () => {
+    if (selectedAnswer === null || hasAnswered) return;
+
+    setIsLoading(true);
+    setError('');
+
+    try {
+      await submitAnswer(gameSession.currentQuestionIndex, selectedAnswer);
+      setHasAnswered(true);
+      setPhase('waiting');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to submit answer');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Reset for next question
+  useEffect(() => {
+    if (gameSession.currentQuestionIndex > 0) {
+      setSelectedAnswer(null);
+      setHasAnswered(false);
+      setPhase('question');
+    }
+  }, [gameSession.currentQuestionIndex]);
+
+  // Update phase based on game session state
+  useEffect(() => {
+    if (gameSession.gamePhase === 'lobby' && phase !== 'lobby') {
+      setPhase('lobby');
+    } else if (gameSession.gamePhase === 'question' && !hasAnswered) {
+      setPhase('question');
+    } else if (gameSession.gamePhase === 'results') {
+      setPhase('results');
+    } else if (gameSession.gamePhase === 'finished') {
+      setPhase('finished');
+    }
+  }, [gameSession.gamePhase, hasAnswered, phase]);
+
+  // Get current question
+  const getCurrentQuestion = () => {
+    if (!gameSession.quiz || gameSession.currentQuestionIndex >= gameSession.quiz.questions.length) {
+      return null;
+    }
+    return gameSession.quiz.questions[gameSession.currentQuestionIndex];
+  };
+
+  // Get player's current score
+  const getPlayerScore = () => {
+    if (!nostr.userPubkey) return 0;
+    const playerScore = gameSession.scores.find(s => s.pubkey === nostr.userPubkey);
+    return playerScore?.totalScore || 0;
+  };
+
+  // Render joining phase
+  const renderJoining = () => (
+    <div className="player-container">
+      <div className="join-section">
+        <h1>Join Quiz Game</h1>
+        
+        <div className="connection-status">
+          {nostr.isConnecting ? (
+            <span className="status-connecting">🟡 Connecting to Nostr...</span>
+          ) : nostr.isConnected ? (
+            <span className="status-connected">🟢 Connected to Nostr</span>
+          ) : (
+            <span className="status-disconnected">🔴 Connection failed</span>
+          )}
+        </div>
+
+        <form onSubmit={handleJoinGame} className="join-form">
+          <div className="form-group">
+            <label htmlFor="pin">Game PIN</label>
+            <input
+              id="pin"
+              type="text"
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              placeholder="Enter 6-digit PIN"
+              maxLength={6}
+              pattern="[0-9]{6}"
+              required
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="nickname">Your Nickname</label>
+            <input
+              id="nickname"
+              type="text"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              placeholder="Enter your nickname"
+              maxLength={20}
+              required
+            />
+          </div>
+
+          <button 
+            type="submit" 
+            className="join-button"
+            disabled={isLoading || !nostr.isConnected}
+          >
+            {isLoading ? 'Joining...' : 'Join Game'}
+          </button>
+        </form>
+
+        {error && <div className="error-message">{error}</div>}
+
+        <button 
+          className="back-button"
+          onClick={() => navigate(ROUTES.HOME)}
+        >
+          ← Back to Home
+        </button>
+      </div>
+    </div>
+  );
+
+  // Render lobby phase
+  const renderLobby = () => (
+    <div className="player-container">
+      <div className="lobby-section">
+        <h1>Waiting for Game to Start</h1>
+        
+        <div className="player-info">
+          <h2>Welcome, {nickname}!</h2>
+          <p>Game PIN: <strong>{pin}</strong></p>
+        </div>
+
+        <div className="lobby-status">
+          <div className="waiting-animation">
+            <div className="spinner"></div>
+            <p>Waiting for host to start the quiz...</p>
+          </div>
+          
+          <div className="players-count">
+            <p>{gameSession.players.length} player(s) in the game</p>
+          </div>
+        </div>
+
+        <button 
+          className="leave-button"
+          onClick={() => navigate(ROUTES.HOME)}
+        >
+          Leave Game
+        </button>
+      </div>
+    </div>
+  );
+
+  // Render question phase
+  const renderQuestion = () => {
+    const currentQuestion = getCurrentQuestion();
+    if (!currentQuestion) {
+      return (
+        <div className="player-container">
+          <div className="error-section">
+            <h1>No Question Available</h1>
+            <button onClick={() => navigate(ROUTES.HOME)}>Back to Home</button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="player-container">
+        <div className="question-section">
+          <div className="question-header">
+            <h2>Question {gameSession.currentQuestionIndex + 1}</h2>
+            <div className="player-score">Score: {getPlayerScore()}</div>
+          </div>
+
+          <div className="question-display">
+            <h3>{currentQuestion.text}</h3>
+          </div>
+
+          <div className="answer-options">
+            {currentQuestion.options.map((option, index) => (
+              <button
+                key={index}
+                className={`answer-button ${selectedAnswer === index ? 'selected' : ''}`}
+                onClick={() => handleAnswerSelect(index)}
+                disabled={hasAnswered}
+              >
+                <span className="option-letter">{String.fromCharCode(65 + index)}</span>
+                <span className="option-text">{option}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="question-controls">
+            <button
+              className="submit-button"
+              onClick={handleSubmitAnswer}
+              disabled={selectedAnswer === null || hasAnswered || isLoading}
+            >
+              {isLoading ? 'Submitting...' : hasAnswered ? 'Answer Submitted' : 'Submit Answer'}
+            </button>
+          </div>
+
+          {error && <div className="error-message">{error}</div>}
+        </div>
+      </div>
+    );
+  };
+
+  // Render waiting phase
+  const renderWaiting = () => (
+    <div className="player-container">
+      <div className="waiting-section">
+        <h1>Answer Submitted!</h1>
+        
+        <div className="waiting-animation">
+          <div className="checkmark">✓</div>
+          <p>Waiting for other players...</p>
+        </div>
+
+        <div className="player-score">
+          <h3>Your Score: {getPlayerScore()}</h3>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Render results phase
+  const renderResults = () => (
+    <div className="player-container">
+      <div className="results-section">
+        <h1>Results</h1>
+        
+        <div className="leaderboard">
+          {gameSession.scores
+            .sort((a, b) => b.totalScore - a.totalScore)
+            .map((score, index) => (
+              <div 
+                key={score.pubkey} 
+                className={`leaderboard-row ${score.pubkey === nostr.userPubkey ? 'current-player' : ''}`}
+              >
+                <span className="rank">#{index + 1}</span>
+                <span className="nickname">{score.nickname}</span>
+                <span className="score">{score.totalScore} pts</span>
+              </div>
+            ))}
+        </div>
+
+        <div className="player-position">
+          {(() => {
+            const playerRank = gameSession.scores
+              .sort((a, b) => b.totalScore - a.totalScore)
+              .findIndex(s => s.pubkey === nostr.userPubkey) + 1;
+            return (
+              <p>You are in position <strong>#{playerRank}</strong></p>
+            );
+          })()}
+        </div>
+      </div>
+    </div>
+  );
+
+  // Render finished phase
+  const renderFinished = () => (
+    <div className="player-container">
+      <div className="finished-section">
+        <h1>🏆 Quiz Complete!</h1>
+        
+        <div className="final-results">
+          <h2>Final Score: {getPlayerScore()} points</h2>
+          
+          {(() => {
+            const playerRank = gameSession.scores
+              .sort((a, b) => b.totalScore - a.totalScore)
+              .findIndex(s => s.pubkey === nostr.userPubkey) + 1;
+            
+            let message = '';
+            let emoji = '';
+            
+            if (playerRank === 1) {
+              message = 'Congratulations! You won!';
+              emoji = '🥇';
+            } else if (playerRank === 2) {
+              message = 'Great job! Second place!';
+              emoji = '🥈';
+            } else if (playerRank === 3) {
+              message = 'Well done! Third place!';
+              emoji = '🥉';
+            } else {
+              message = `You finished in ${playerRank}${playerRank === 11 || playerRank === 12 || playerRank === 13 ? 'th' : 
+                playerRank % 10 === 1 ? 'st' : 
+                playerRank % 10 === 2 ? 'nd' : 
+                playerRank % 10 === 3 ? 'rd' : 'th'} place!`;
+              emoji = '🎯';
+            }
+            
+            return (
+              <div className="final-position">
+                <div className="position-emoji">{emoji}</div>
+                <p>{message}</p>
+              </div>
+            );
+          })()}
+        </div>
+
+        <div className="finished-controls">
+          <button 
+            className="home-button"
+            onClick={() => navigate(ROUTES.HOME)}
+          >
+            Back to Home
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Render based on current phase
+  switch (phase) {
+    case 'joining':
+      return renderJoining();
+    case 'lobby':
+      return renderLobby();
+    case 'question':
+      return renderQuestion();
+    case 'waiting':
+      return renderWaiting();
+    case 'results':
+      return renderResults();
+    case 'finished':
+      return renderFinished();
+    default:
+      return renderJoining();
+  }
+}
+
+export default PlayerPageReal;

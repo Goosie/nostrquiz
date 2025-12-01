@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getNostrWebSocketService } from '../services/nostrWebSocket';
+import { getNostrWebSocketService } from '../services/unused/nostrWebSocket';
 
 export interface NostrState {
   connected: boolean;
